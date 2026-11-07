@@ -23,8 +23,7 @@ jobs:
             --archive-areas "main contrib non-free non-free-firmware" \
             --linux-flavours amd64 \
             --iso-volume "ARCANEXUS_OS" \
-            --binary-images iso-hybrid \
-            --chroot-squashfs-compression-type zstd
+            --binary-images iso-hybrid
           
           cat << 'INNER_EOF' > config/package-lists/arcanexus.list.chroot
           linux-image-amd64

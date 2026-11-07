@@ -23,7 +23,7 @@ jobs:
         run: pip install flet requests
         
       - name: Compile APK
-        run: flet build apk --project-name ArcaneXus --org com.sovereignsektorz.arcanexus
+        run: flet build apk --project ArcaneXus --org com.sovereignsektorz.arcanexus
         
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
