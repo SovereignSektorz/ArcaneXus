@@ -4,14 +4,15 @@ on: [push]
 jobs:
   build-iso:
     runs-on: ubuntu-latest
+    container: debian:trixie
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
       - name: Install Build Dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y live-build xorriso mtools squashfs-tools
+          apt-get update
+          apt-get install -y git live-build xorriso mtools squashfs-tools
 
       - name: Configure Live Build
         run: |
@@ -39,7 +40,7 @@ jobs:
       - name: Compile ISO
         run: |
           cd arcanexus_builder
-          sudo lb build
+          lb build
 
       - name: Upload ISO Artifact
         uses: actions/upload-artifact@v4
