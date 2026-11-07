@@ -1,0 +1,534 @@
+#!/data/data/com.termux/files/usr/bin/python3
+
+import json
+import os
+import re
+import shlex
+import shutil
+import subprocess
+import sys
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+HOME = Path.home()
+PREFIX = Path(os.environ.get("PREFIX", "/data/data/com.termux/files/usr"))
+STATE = HOME / ".local/state/arcanexus"
+REGISTRY = STATE / "terminal_registry.json"
+API = "http://127.0.0.1:1121"
+
+SEARCH_ROOTS = [
+    HOME / "bin",
+    HOME / "scripts",
+    HOME / "workspace/bin",
+    HOME / "storage/external-1/INFINITY_VAULT/01_aioshell",
+    HOME / "storage/external-1/INFINITY_VAULT/02_tokenomics_ledger",
+]
+
+AI_HINTS = (
+    "morningstar",
+    "ollama",
+    "aioshell",
+    "sovsh",
+    "ai-",
+    "anx-ai",
+)
+
+COUNCIL_HINTS = (
+    "council",
+    "coven",
+    "dag",
+    "oracle",
+    "seer",
+    "nexus",
+    "forge",
+)
+
+RESET = "\033[0m"
+BOLD = "\033[1m"
+DIM = "\033[2m"
+CYAN = "\033[38;5;51m"
+PURPLE = "\033[38;5;141m"
+GREEN = "\033[38;5;84m"
+YELLOW = "\033[38;5;220m"
+RED = "\033[38;5;203m"
+GRAY = "\033[38;5;245m"
+WHITE = "\033[38;5;255m"
+
+
+def clear():
+    print("\033[2J\033[H", end="")
+
+
+def normalize(name):
+    name = Path(name).name
+
+    for suffix in (".py", ".sh", ".bash"):
+        if name.endswith(suffix):
+            name = name[:-len(suffix)]
+
+    for prefix in (
+        "arcanexus_",
+        "arcanexus-",
+        "anx_",
+        "anx-",
+    ):
+        if name.lower().startswith(prefix):
+            name = name[len(prefix):]
+
+    name = name.lower()
+    name = re.sub(r"[^a-z0-9]+", "-", name)
+    return name.strip("-")
+
+
+def executable_file(path):
+    try:
+        if not path.is_file():
+            return False
+
+        if os.access(path, os.X_OK):
+            return True
+
+        return path.suffix.lower() in (".py", ".sh", ".bash")
+    except OSError:
+        return False
+
+
+def discover():
+    registry = {}
+
+    for root in SEARCH_ROOTS:
+        if not root.exists():
+            continue
+
+        max_depth = 1 if root == HOME / "bin" else 6
+        root_depth = len(root.parts)
+
+        try:
+            iterator = root.rglob("*")
+            for path in iterator:
+                if len(path.parts) - root_depth > max_depth:
+                    continue
+
+                if not executable_file(path):
+                    continue
+
+                lower = path.name.lower()
+
+                relevant = (
+                    lower.startswith("anx")
+                    or "arcanexus" in lower
+                    or "morningstar" in lower
+                    or "sovsh" in lower
+                    or "aioshell" in lower
+                    or any(hint in lower for hint in COUNCIL_HINTS)
+                )
+
+                if not relevant:
+                    continue
+
+                word = normalize(path.name)
+
+                if not word or word in ("arcanexus", "terminal"):
+                    continue
+
+                candidate = str(path)
+
+                if word not in registry:
+                    registry[word] = candidate
+                elif str(HOME / "bin") in candidate:
+                    registry[word] = candidate
+
+        except (OSError, PermissionError):
+            continue
+
+    known_commands = (
+        "anx-status",
+        "anx-telemetry",
+        "anx-sync",
+        "anx-sync-vault",
+        "anx-ui",
+        "anx-dash",
+        "anx-edge",
+        "anx-sovscript",
+        "anx-ai-direct",
+        "anx-forge-st",
+        "sovsh",
+        "edge-panel",
+    )
+
+    for command in known_commands:
+        found = shutil.which(command)
+        if found:
+            registry.setdefault(normalize(command), found)
+
+    STATE.mkdir(parents=True, exist_ok=True)
+    REGISTRY.write_text(
+        json.dumps(registry, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+
+    return registry
+
+
+def http_json(path, timeout=5):
+    try:
+        with urllib.request.urlopen(API + path, timeout=timeout) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except Exception:
+        return None
+
+
+def runtime_online():
+    for route in ("/api/status", "/status", "/health"):
+        if http_json(route, timeout=2) is not None:
+            return True
+    return False
+
+
+def banner():
+    clear()
+
+    online = runtime_online()
+    state_color = GREEN if online else RED
+    state_text = "ONLINE" if online else "OFFLINE"
+
+    print(f"{PURPLE}{BOLD}ArcaneXus{RESET}  "
+          f"{GRAY}XCover Edge · Node 1121{RESET}  "
+          f"{state_color}● {state_text}{RESET}")
+
+    print(f"{WHITE}SurDemise@ArcaneXus{RESET}")
+    print(f"{DIM}Unified AI · Council · SovScript · Runtime Terminal{RESET}")
+    print(f"{GRAY}{'─' * 62}{RESET}")
+    print(
+        f"{DIM}help · status · ai · council · commands · refresh · "
+        f"!shell · exit{RESET}\n"
+    )
+
+
+def run_path(path, args=None):
+    args = args or []
+    p = Path(path)
+
+    if not p.exists():
+        print(f"{RED}Unavailable:{RESET} {path}")
+        return 127
+
+    if p.suffix == ".py":
+        command = ["python3", str(p), *args]
+    elif p.suffix in (".sh", ".bash"):
+        command = ["bash", str(p), *args]
+    else:
+        command = [str(p), *args]
+
+    try:
+        return subprocess.call(command)
+    except KeyboardInterrupt:
+        print()
+        return 130
+    except Exception as error:
+        print(f"{RED}Launch failed:{RESET} {error}")
+        return 1
+
+
+def show_status():
+    payload = None
+
+    for route in ("/api/status", "/status", "/health"):
+        payload = http_json(route)
+        if payload is not None:
+            break
+
+    if payload is None:
+        print(f"{RED}ArcaneXus runtime is not responding on port 1121.{RESET}")
+        return
+
+    print(json.dumps(payload, indent=2))
+
+
+def ollama_models():
+    try:
+        result = subprocess.run(
+            ["ollama", "list"],
+            capture_output=True,
+            text=True,
+            timeout=8,
+        )
+
+        if result.returncode != 0:
+            return []
+
+        models = []
+        for line in result.stdout.splitlines()[1:]:
+            fields = line.split()
+            if fields:
+                models.append(fields[0])
+
+        return models
+
+    except Exception:
+        return []
+
+
+def choose_ai_model(models):
+    priorities = (
+        "morningstar:edge",
+        "morningstar-fast:latest",
+        "morningstar:latest",
+        "seer:latest",
+        "nexus:latest",
+        "forge:latest",
+        "qwen2.5-coder:1.5b-instruct",
+    )
+
+    for preferred in priorities:
+        if preferred in models:
+            return preferred
+
+    return models[0] if models else None
+
+
+def ask_ollama(model, prompt):
+    payload = json.dumps({
+        "model": model,
+        "prompt": prompt,
+        "stream": False,
+    }).encode("utf-8")
+
+    request = urllib.request.Request(
+        "http://127.0.0.1:11434/api/generate",
+        data=payload,
+        headers={"Content-Type": "application/json"},
+    )
+
+    try:
+        with urllib.request.urlopen(request, timeout=180) as response:
+            result = json.loads(response.read().decode("utf-8"))
+            return result.get("response", "").strip()
+    except urllib.error.URLError as error:
+        return f"Ollama unavailable: {error}"
+    except Exception as error:
+        return f"AI request failed: {error}"
+
+
+def ai_command(prompt):
+    models = ollama_models()
+
+    if not models:
+        ai_candidates = [
+            (name, path)
+            for name, path in REGISTRY_MAP.items()
+            if any(hint in name.lower() for hint in AI_HINTS)
+        ]
+
+        if ai_candidates:
+            name, path = ai_candidates[0]
+            print(f"{CYAN}Opening existing AI interface:{RESET} {name}")
+            run_path(path)
+            return
+
+        print(f"{RED}No active Ollama models or existing AI launcher found.{RESET}")
+        return
+
+    model = choose_ai_model(models)
+
+    if not prompt:
+        try:
+            prompt = input(f"{PURPLE}MorningStar{RESET} {CYAN}❯{RESET} ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return
+
+    if not prompt:
+        return
+
+    print(f"{DIM}{model}{RESET}")
+    answer = ask_ollama(model, prompt)
+    print(f"\n{WHITE}{answer}{RESET}")
+
+
+def council_components():
+    found = []
+
+    for name, path in REGISTRY_MAP.items():
+        combined = f"{name} {path}".lower()
+
+        if any(hint in combined for hint in COUNCIL_HINTS):
+            found.append((name, path))
+
+    return sorted(found)
+
+
+def council_command(arguments):
+    components = council_components()
+
+    exact = [
+        item for item in components
+        if "council" in item[0] or "coven" in item[0]
+    ]
+
+    if exact:
+        name, path = exact[0]
+        print(f"{PURPLE}Council link:{RESET} {name}")
+        run_path(path, arguments)
+        return
+
+    models = ollama_models()
+    council_models = [
+        model for model in models
+        if any(hint in model.lower() for hint in COUNCIL_HINTS)
+    ]
+
+    if not council_models:
+        print(f"{YELLOW}No existing Council launcher or Council model was found.{RESET}")
+        return
+
+    prompt = " ".join(arguments).strip()
+
+    if not prompt:
+        try:
+            prompt = input(f"{PURPLE}Council question{RESET} {CYAN}❯{RESET} ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return
+
+    if not prompt:
+        return
+
+    print(f"{PURPLE}{BOLD}ArcaneXus Council{RESET}")
+
+    for model in council_models:
+        print(f"\n{CYAN}{model}{RESET}")
+        print(ask_ollama(model, prompt))
+
+
+def show_commands():
+    print(f"{PURPLE}{BOLD}ArcaneXus command registry{RESET}\n")
+
+    if not REGISTRY_MAP:
+        print(f"{YELLOW}No existing ArcaneXus launchers discovered.{RESET}")
+        return
+
+    width = max(len(name) for name in REGISTRY_MAP)
+
+    for name in sorted(REGISTRY_MAP):
+        path = REGISTRY_MAP[name]
+        print(f"  {CYAN}{name:<{width}}{RESET}  {DIM}{path}{RESET}")
+
+
+def show_help():
+    print(f"""
+{PURPLE}{BOLD}ArcaneXus Unified Terminal{RESET}
+
+  {CYAN}status{RESET}              Live port-1121 ArcaneXus status
+  {CYAN}ai <question>{RESET}       MorningStar / existing local AI
+  {CYAN}council <question>{RESET}  Existing Council launcher or Council models
+  {CYAN}models{RESET}              Installed Ollama models
+  {CYAN}commands{RESET}            Discovered ArcaneXus single-word commands
+  {CYAN}refresh{RESET}             Rediscover installed commands and scripts
+  {CYAN}clear{RESET}               Redraw the ArcaneXus terminal
+  {CYAN}!<command>{RESET}          Run a raw Termux command
+  {CYAN}exit{RESET}                Close ArcaneXus
+
+Every discovered ArcaneXus launcher can be called by its displayed
+single-word name. Existing scripts remain in their original locations.
+""")
+
+
+def run_raw(command):
+    if not command:
+        shell = os.environ.get("SHELL", str(PREFIX / "bin/bash"))
+        subprocess.call([shell])
+        return
+
+    subprocess.call(
+        command,
+        shell=True,
+        executable=str(PREFIX / "bin/bash"),
+    )
+
+
+REGISTRY_MAP = discover()
+
+
+def main():
+    global REGISTRY_MAP
+
+    banner()
+
+    while True:
+        try:
+            raw = input(
+                f"{PURPLE}{BOLD}SurDemise{RESET}"
+                f"{GRAY}@{RESET}"
+                f"{CYAN}{BOLD}ArcaneXus{RESET} "
+                f"{WHITE}❯{RESET} "
+            ).strip()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            continue
+
+        if not raw:
+            continue
+
+        if raw.startswith("!"):
+            run_raw(raw[1:].strip())
+            continue
+
+        try:
+            parts = shlex.split(raw)
+        except ValueError as error:
+            print(f"{RED}{error}{RESET}")
+            continue
+
+        command = parts[0].lower()
+        arguments = parts[1:]
+
+        if command in ("exit", "quit"):
+            print(f"{PURPLE}ArcaneXus terminal closed.{RESET}")
+            return
+
+        if command in ("help", "?"):
+            show_help()
+        elif command == "status":
+            show_status()
+        elif command in ("ai", "morningstar"):
+            ai_command(" ".join(arguments))
+        elif command == "council":
+            council_command(arguments)
+        elif command == "models":
+            models = ollama_models()
+            if models:
+                for model in models:
+                    print(f"{CYAN}{model}{RESET}")
+            else:
+                print(f"{YELLOW}No Ollama models detected.{RESET}")
+        elif command in ("commands", "scripts", "apps"):
+            show_commands()
+        elif command == "refresh":
+            REGISTRY_MAP = discover()
+            print(
+                f"{GREEN}Registry refreshed:{RESET} "
+                f"{len(REGISTRY_MAP)} existing launchers linked."
+            )
+        elif command == "clear":
+            banner()
+        elif command in REGISTRY_MAP:
+            run_path(REGISTRY_MAP[command], arguments)
+        else:
+            external = shutil.which(command)
+
+            if external and (
+                command.startswith("anx")
+                or "arcanexus" in command
+            ):
+                subprocess.call([external, *arguments])
+            else:
+                print(
+                    f"{RED}Unknown ArcaneXus command:{RESET} {command}\n"
+                    f"{DIM}Use 'commands', 'help', or !command for raw Termux.{RESET}"
+                )
+
+
+if __name__ == "__main__":
+    main()

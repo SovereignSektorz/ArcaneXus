@@ -1,0 +1,49 @@
+#!/bin/bash
+while true; do
+    clear
+    echo -e "\e[1;36m==========================================\e[0m"
+    echo -e "\e[1;37m        ARCANEXUS EDGE CONTROL PANEL      \e[0m"
+    echo -e "\e[1;36m==========================================\e[0m"
+    echo -e " \e[1;33m[1]\e[0m Boot MS-003 Edge Substrate"
+    echo -e " \e[1;33m[2]\e[0m View Live Status / Telemetry"
+    echo -e " \e[1;33m[3]\e[0m Watch Core Logs (Ctrl+C to stop)"
+    echo -e " \e[1;33m[4]\e[0m Kill All Daemons"
+    echo -e " \e[1;33m[0]\e[0m Exit Panel"
+    echo -e "\e[1;36m==========================================\e[0m"
+    read -p " Select Action [0-4]: " action
+    
+    echo ""
+    case $action in
+        1) 
+            echo -e "\e[1;32m[+] Booting daemons...\e[0m"
+            bash "$HOME/scripts/daemons/boot_edge_node.sh"
+            ;;
+        2) 
+            echo -e "\e[1;32m[+] Fetching telemetry from Port 1121...\e[0m"
+            curl -sS http://127.0.0.1:1121/api/status | python3 -m json.tool
+            ;;
+        3) 
+            echo -e "\e[1;32m[+] Streaming logs (Ctrl+C to exit)...\e[0m"
+            tail -f "$HOME/logs/arcanexus-core.log"
+            ;;
+        4) 
+            echo -e "\e[1;31m[!] Stopping daemons...\e[0m"
+            pkill -f "arcanexus_ios_core_secure.py"
+            pkill -f "morningstar_server.py"
+            echo "[✓] Substrate Offline."
+            ;;
+        5) 
+            clear
+            python3 "$HOME/bin/sovsh"
+            ;;
+        0) 
+            clear
+            break
+            ;;
+        *) 
+            echo -e "\e[1;31m[!] Invalid selection\e[0m"
+            ;;
+    esac
+    echo ""
+    read -p "Press Enter to return to menu..."
+done
