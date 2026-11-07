@@ -1,0 +1,49 @@
+name: Build ArcaneXus PC ISO
+on: [push]
+
+jobs:
+  build-iso:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install Build Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y live-build xorriso mtools squashfs-tools
+
+      - name: Configure Live Build
+        run: |
+          mkdir -p arcanexus_builder/config/package-lists
+          cd arcanexus_builder
+          lb config \
+            --distribution trixie \
+            --architecture amd64 \
+            --archive-areas "main contrib non-free non-free-firmware" \
+            --linux-flavours amd64 \
+            --iso-volume "ARCANEXUS_OS" \
+            --binary-images iso-hybrid \
+            --chroot-squashfs-compression-type zstd
+          
+          cat << 'INNER_EOF' > config/package-lists/arcanexus.list.chroot
+          linux-image-amd64
+          systemd-sysv
+          grub-efi-amd64-bin
+          grub-pc-bin
+          git
+          curl
+          python3-full
+          build-essential
+          INNER_EOF
+
+      - name: Compile ISO
+        run: |
+          cd arcanexus_builder
+          sudo lb build
+
+      - name: Upload ISO Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ArcaneXus_OS_Master_ISO
+          path: arcanexus_builder/*.iso
