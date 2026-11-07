@@ -1,0 +1,6 @@
+Package: arcanexus-core
+Version: 1.0.0
+Architecture: all
+Maintainer: SurDemise
+Description: ArcaneXus OS core integration, sovsh, and edge telemetry tools
+Depends: python, bash, curl

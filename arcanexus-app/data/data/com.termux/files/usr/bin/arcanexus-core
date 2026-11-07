@@ -1,0 +1,97 @@
+#!/usr/bin/env python3
+"""
+ArcaneXus Unified Core Runtime (arcanexus_ios_core_secure.py)
+Unified backend server binding computer, phone, OS functionality, and APK endpoints.
+"""
+
+import os
+import sys
+import json
+import time
+import socket
+import sqlite3
+from http.server import HTTPServer, BaseHTTPRequestHandler
+
+PORT = 1121
+SHM_PATH = "/dev/shm/anx_shm"
+DB_PATH = os.path.expanduser("~/.arcanexus_ledger.db")
+
+class ReusableHTTPServer(HTTPServer):
+    allow_reuse_address = True
+
+def init_db():
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS telemetry (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp REAL,
+            node_id TEXT,
+            status TEXT,
+            load_avg TEXT
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+class ArcaneXusHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == "/api/status" or self.path == "/sys-probe":
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            
+            load1, load5, load15 = os.getloadavg() if hasattr(os, "getloadavg") else (0.0, 0.0, 0.0)
+            data = {
+                "system": "ArcaneXus",
+                "version": "v1.0.0-master",
+                "status": "operational",
+                "hostname": socket.gethostname(),
+                "port": PORT,
+                "load_avg": [load1, load5, load15],
+                "shm_active": os.path.exists(SHM_PATH),
+                "timestamp": time.time()
+            }
+            self.wfile.write(json.dumps(data, indent=2).encode("utf-8"))
+            
+        elif self.path == "/api/ledger":
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            try:
+                conn = sqlite3.connect(DB_PATH)
+                cursor = conn.cursor()
+                cursor.execute("SELECT timestamp, node_id, status, load_avg FROM telemetry ORDER BY id DESC LIMIT 10")
+                rows = cursor.fetchall()
+                conn.close()
+                self.wfile.write(json.dumps({"ledger_entries": rows}, indent=2).encode("utf-8"))
+            except Exception as e:
+                self.wfile.write(json.dumps({"error": str(e)}).encode("utf-8"))
+        else:
+            self.send_response(404)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Endpoint not found"}).encode("utf-8"))
+
+    def log_message(self, format, *args):
+        return
+
+def run_server():
+    init_db()
+    server_address = ("127.0.0.1", PORT)
+    try:
+        httpd = ReusableHTTPServer(server_address, ArcaneXusHandler)
+        print(f"[ARCANEXUS] Unified Core active on http://127.0.0.1:{PORT}")
+        httpd.serve_forever()
+    except OSError as e:
+        print(f"[ERROR] Port {PORT} busy or restricted: {e}")
+        print("[*] Terminating lingering process on port 1121...")
+        os.system(f"fuser -k {PORT}/tcp 2>/dev/null || true")
+        time.sleep(1)
+        httpd = ReusableHTTPServer(server_address, ArcaneXusHandler)
+        print(f"[ARCANEXUS] Unified Core restarted on http://127.0.0.1:{PORT}")
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        print("\n[ARCANEXUS] Shutting down Core Runtime.")
+
+if __name__ == "__main__":
+    run_server()
