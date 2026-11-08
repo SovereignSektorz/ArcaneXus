@@ -37,3 +37,14 @@ python3 -m unittest discover -s tests -p 'test_*.py' -v
 ```
 
 Run `bash -n termux/ax` to verify the launcher syntax. The deployed launcher is `~/.local/bin/ax`; preserve a timestamped backup before replacing it.
+
+## Action-risk policy
+
+`ax policy` displays the read-only risk classification. `ax policy check ACTION` classifies one named action. This is a classifier, not an authorization service or executor:
+
+- L0 observation and L1 analysis require no approval when they remain read-only.
+- L2 reversible operations require a narrow preauthorized scope. No scope registry or automatic L2 executor is active in this release.
+- L3 consequential operations require explicit approval.
+- Unknown actions fail closed to `REVIEW_REQUIRED`.
+
+Do not interpret a classification as permission to execute. The current implementation does not grant capabilities, store approvals, or run the classified action.

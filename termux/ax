@@ -48,6 +48,8 @@ START HERE
   ax ops              Run the read-only operations and evidence report
   ax ops --json       Emit machine-readable JSON
   ax ops --write-report Save a timestamped report under reports/operations_controller
+  ax policy            Show action-risk and approval policy
+  ax policy check ACTION  Classify an action without executing it
 
 AI
   ax ai              Open MorningStar interactive chat (alias: ax chat)
@@ -701,6 +703,7 @@ case "${1:-menu}" in
   test) run_regression_tests ;;
   self-test) self_test ;;
   ops) shift; exec python3 "$ANX/scripts/ax_ops.py" "$@" ;;
+  policy) shift; exec python3 "$ANX/scripts/ax_policy.py" "$@" ;;
   quick) status ;;
   help|-h|--help) help_text ;;
   learn|tutorial) shift; tutorial "${1:-list}" ;;

@@ -42,6 +42,7 @@ class WorkspaceInventoryTests(unittest.TestCase):
         }
         output = ax_ops.render(report)
         self.assertIn('Read-only checks only', output)
+        self.assertEqual(ax_ops.ACTION_POLICY['L3_EXPLICIT_APPROVAL']['approval'], 'EXPLICIT_APPROVAL_REQUIRED')
         self.assertIn('127.0.0.1:1121: NOT_REACHABLE', output)
 
 if __name__ == '__main__':

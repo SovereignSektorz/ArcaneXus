@@ -16,6 +16,8 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import Any
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from ax_policy import POLICY as ACTION_POLICY
 
 DEFAULT_REPOS = (
     "SovereignSektorz/ArcaneXus",
@@ -158,6 +160,7 @@ def collect(root: Path) -> dict[str, Any]:
             "automatic": ["local inventory", "loopback port checks", "GitHub read queries when gh is authenticated", "rclone remote-name listing"],
             "approval_required": ["file edits", "deletion", "sync or copy", "merge", "deployment", "permission changes", "external publication", "spending"],
             "secrets_policy": "Do not print credentials, tokens, private keys, or raw authentication output.",
+            "action_levels": ACTION_POLICY,
         },
         "workspace": workspace_inventory(root),
         "loopback_services": {str(port): port_state(port) for port in PORTS},

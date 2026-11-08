@@ -30,4 +30,4 @@ jobs:
       - name: Check Termux launcher syntax
         run: bash -n termux/ax
       - name: Check controller syntax
-        run: python -m py_compile tools/ax_ops.py
+        run: python -m py_compile tools/ax_ops.py tools/ax_policy.py
