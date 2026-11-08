@@ -1,0 +1,28 @@
+name: CANON mobile verifier
+
+on:
+  push:
+    paths:
+      - 'mobile-throne/**'
+      - '.github/workflows/canon-mobile.yml'
+  pull_request:
+    paths:
+      - 'mobile-throne/**'
+      - '.github/workflows/canon-mobile.yml'
+
+jobs:
+  mobile-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install verifier dependency
+        run: python -m pip install -r mobile-throne/requirements.txt
+      - name: Run tamper and signature tests
+        env:
+          PYTHONPATH: mobile-throne
+        run: python -m unittest discover -s mobile-throne/tests -v
+      - name: Check shell syntax
+        run: bash -n mobile-throne/scripts/*.sh
